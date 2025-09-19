@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Школьный рейтинг — Online</title>
+<style>
+  :root{
+    --bg:#0b1220; --muted:#7e8aa3; --text:#e8eefc; --gold:#ffd54a;
+
+    /* Прожектор */
+    --disc: clamp(56px, 7vw, 96px);           /* диаметр диска */
+    --thin: 2px;                              /* толщина у основания (низ) */
+    --raise: 70px;                            /* насколько поднят верх луча и диск */
+    --beam: calc(42vh + 80px + var(--raise)); /* длина луча (основание фикс) */
+    --kiss: 30px;                            /* перекрытие луч ↔ диск (без щели) */
+    --sweep: 8s;                              /* период движения полосы снизу вверх */
+  }
+
+  html,body{height:100%}
+  body{
+    margin:0; color:var(--text);
+    font-family:Inter,system-ui,Segoe UI,Roboto,Arial;
+    background: radial-gradient(1200px 800px at 20% -10%,#162554 0%,#0b1220 60%) fixed;
+    overflow-x:hidden;
+  }
+
+  /* Силуэт города */
+  .city{
+    position:fixed; left:0; right:0; bottom:0; height:160px; z-index:0;
+    background:
+      linear-gradient(to top, rgba(0,0,0,.55), rgba(0,0,0,0)) 0 0/100% 100%,
+      url('data:image/svg+xml;utf8,\
+      <svg xmlns="http://www.w3.org/2000/svg" width="1600" height="160" viewBox="0 0 1600 160">\
+      <rect width="1600" height="160" fill="%230a1326"/>\
+      <path d="M0,140 h80 v-40 h40 v-60 h60 v60 h40 v-30 h40 v30 h50 v-70 h70 v70 h40 v-40 h50 v40 h60 v-90 h60 v90 h60 v-50 h40 v50 h70 v-30 h30 v30 h70 v-110 h50 v110 h80 v20 H0z" fill="%2312213f"/>\
+      <path d="M0,150 h90 v-30 h30 v-60 h40 v60 h50 v-40 h40 v40 h50 v-70 h60 v70 h40 v-30 h60 v30 h70 v-100 h40 v100 h50 v-50 h60 v50 h90 v10 H0z" fill="%23152a52"/>\
+      </svg>') repeat-x bottom left / cover;
+    opacity:.85; pointer-events:none;
+  }
+  .starfall{position:absolute; top:0; left:0; right:0; height:160px; z-index:1; overflow:hidden}
+  .meteor{position:absolute; width:2px; height:2px; background:linear-gradient(45deg,rgba(255,255,255,.9),rgba(255,255,255,.2)); border-radius:50%; box-shadow:0 0 6px 1px rgba(255,255,255,.4); animation:meteorFall 4s linear infinite}
+  .meteor:nth-child(1){left:20%; animation-delay:0s}
+  .meteor:nth-child(2){left:50%; animation-delay:1.5s}
+  .meteor:nth-child(3){left:80%; animation-delay:3s}
+  @keyframes meteorFall{0%{transform:translate(0,-100%) rotate(45deg);opacity:1}100%{transform:translate(-100px,160px) rotate(45deg);opacity:0}}
+
+  .wrap{max-width:800px;margin:0 auto;padding:20px;position:relative;z-index:1}
+  header{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+  .title{display:flex;align-items:center;gap:10px;font-weight:800;letter-spacing:.5px;font-size:clamp(22px,3vw,36px)}
+  .subtitle{display:none}
+  .grid{display:grid;grid-template-columns:1fr;gap:10px;margin-top:16px}
+  .tile{display:flex;align-items:center;justify-content:space-between;background:linear-gradient(180deg,rgba(255,255,255,.03),rgba(255,255,255,0));border:1px solid rgba(255,255,255,.06);border-radius:14px;padding:12px 14px;box-shadow:0 4px 12px rgba(0,0,0,.25)}
+  .left{display:flex;align-items:center;gap:12px;min-width:0}
+  .rank{width:36px;height:36px;border-radius:8px;display:grid;place-items:center;font-weight:800;background:#0f1730;border:1px solid rgba(255,255,255,.08)}
+  .name{font-weight:700;letter-spacing:.3px;font-size:18px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .class{font-size:14px;color:var(--muted)}
+  .right{display:flex;align-items:center;gap:12px}
+  .score{font-weight:800;min-width:48px;text-align:right;font-size:18px}
+  .medal{font-size:24px}
+  .footer{margin-top:12px;display:flex;justify-content:space-between;color:#7e8aa3;font-size:12px}
+
+  /* ───────────── Прожектор: ВОГНУТАЯ кромка луча ───────────── */
+  .batsignal{
+    position:fixed;
+    left: clamp(24px, 4vw, 64px);
+    bottom: 84px;
+    width: calc(var(--disc) + 16px);
+    height: calc(var(--beam) + var(--disc));
+    z-index: 0;
+    overflow: visible;
+  }
+
+  .batsignal .beam{
+    position:absolute;
+    bottom:0;
+    left: 8px;                /* центр совпадает с диском */
+    width: var(--disc);
+    height: var(--beam);
+    overflow:hidden;
+  }
+
+  /* Маска с ВОГНУТОЙ дугой сверху: один единственный луч */
+  .beam-core, .beam-sweep, .beam-dust{
+    position:absolute; inset:0;
+    -webkit-mask: url('data:image/svg+xml;utf8,\
+      <svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 100 100" preserveAspectRatio="none">\
+        <!-- Вогнутая кромка: середина ниже краёв (∪) -->\
+        <path d="M0,0 Q50,10 100,0 L55,100 L45,100 Z" fill="white"/>\
+      </svg>') no-repeat 50% 0/100% 100%;
+            mask: url('data:image/svg+xml;utf8,\
+      <svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 100 100" preserveAspectRatio="none">\
+        <path d="M0,0 Q50,10 100,0 L55,100 L45,100 Z" fill="white"/>\
+      </svg>') no-repeat 50% 0/100% 100%;
+  }
+
+  /* Фоновое свечение луча */
+  .beam-core{
+    background: linear-gradient(180deg,
+      rgba(255,238,170,.30) 0%,
+      rgba(255,238,170,.12) 70%,
+      rgba(255,238,170,0) 100%);
+    filter: blur(.9px);
+    animation: coreFlicker 3.6s ease-in-out infinite;
+  }
+  @keyframes coreFlicker{0%,100%{opacity:.93}40%{opacity:.86}50%{opacity:1}60%{opacity:.9}}
+
+  /* Движущаяся полоса света (бесшовно снизу вверх) */
+  .beam-sweep{ overflow:hidden; }
+  .beam-sweep::before,
+  .beam-sweep::after{
+    content:"";
+    position:absolute; left:0; right:0; height:140%;
+    background: linear-gradient(180deg,
+      rgba(255,255,210,0) 0%,
+      rgba(255,255,210,.20) 35%,
+      rgba(255,255,210,.95) 50%,
+      rgba(255,255,210,.20) 65%,
+      rgba(255,255,210,0) 100%);
+    filter: blur(1px);
+    mix-blend-mode: screen;
+    will-change: transform;
+    transform: translateY(100%);
+    animation: sweepUpY var(--sweep) linear infinite;
+  }
+  .beam-sweep::after{ animation-delay: calc(var(--sweep) / -2); }
+
+  @keyframes sweepUpY{
+    0%   { transform: translateY(100%); }
+    100% { transform: translateY(-40%); }
+  }
+
+  /* Лёгкая «пыль» в луче */
+  .beam-dust{
+    background:
+      radial-gradient(1.8px 1.8px at 12% 78%, rgba(255,255,210,.25) 0, rgba(255,255,210,0) 60%),
+      radial-gradient(1.8px 1.8px at 32% 60%, rgba(255,255,210,.18) 0, rgba(255,255,210,0) 60%),
+      radial-gradient(1.8px 1.8px at 56% 70%, rgba(255,255,210,.22) 0, rgba(255,255,210,0) 60%),
+      radial-gradient(1.8px 1.8px at 76% 50%, rgba(255,255,210,.16) 0, rgba(255,255,210,0) 60%);
+    filter: blur(.25px);
+    opacity:.6;
+    animation: dustDrift 9s linear infinite;
+  }
+  @keyframes dustDrift{0%{transform:translateX(-1%) translateY(6%)}100%{transform:translateX(1%) translateY(-6%)}}
+
+  /* ДИСК: свет + лёгкая впуклость снизу + внешний ореол */
+  .target{
+    position:absolute;
+    left: 8px;
+    bottom: calc(var(--beam) - var(--kiss));
+    width: var(--disc);
+    height: var(--disc);
+    border-radius:50%;
+    background: radial-gradient(circle at 35% 35%, #fff9c9 0%, #ffe58b 50%, #ffd55a 100%);
+    box-shadow: 0 0 8px 3px rgba(255,240,150,.45);
+    animation: spotPulse 2.8s ease-in-out infinite;
+  }
+  .target::before{
+    content:""; position:absolute; inset:0; border-radius:50%;
+    background: radial-gradient(ellipse at 50% 120%,
+                rgba(0,0,0,.45) 0%,
+                rgba(0,0,0,0) 70%);
+    mix-blend-mode: multiply;
+    opacity:.32;
+    pointer-events:none;
+  }
+  .target::after{
+    content:""; position:absolute; inset:-6px; border-radius:50%;
+    background: radial-gradient(120% 80% at 50% 120%,
+                rgba(255,255,210,0) 0%,
+                rgba(255,255,210,.22) 40%,
+                rgba(255,255,210,0) 68%);
+    mix-blend-mode: screen; opacity:.18; filter: blur(.6px);
+    pointer-events:none;
+  }
+  @keyframes spotPulse{0%,100%{filter:brightness(1)}50%{filter:brightness(1.08)}}
+
+  .target-img{
+    position:absolute; inset:0; width:100%; height:100%; object-fit:contain;
+    filter: drop-shadow(0 0 2px rgba(0,0,0,.35));
+    z-index:2;
+  }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div class="title">Школьный рейтинг — Online</div>
+      <div class="subtitle" id="status"></div>
+    </header>
+    <div id="grid" class="grid"></div>
+    <div class="footer">
+      <span id="updated"></span>
+      <span>Полноэкранный режим (F11) на ТВ</span>
+    </div>
+  </div>
+
+  <div class="city" aria-hidden="true">
+    <div class="starfall">
+      <div class="meteor"></div>
+      <div class="meteor"></div>
+      <div class="meteor"></div>
+    </div>
+  </div>
+
+  <!-- Прожектор с ВОГНУТЫМ верхом луча (один луч, без «второго» слоя) -->
+  <div class="batsignal" aria-hidden="true">
+    <div class="beam">
+      <div class="beam-core"></div>
+      <div class="beam-sweep"></div>
+      <div class="beam-dust"></div>
+    </div>
+    <div class="target">
+      <img class="target-img" src="bat-signal.png" alt="bat-signal">
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/papaparse@5.4.1/papaparse.min.js"></script>
+  <script>
+    const CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQ-yAedPlzSiucopAyXDGUCa4NC8sSVW1e6yxsFXksSIgxTkJhkONG6daXkg2Y8cGwaqsrffbt22_Py/pub?gid=1022445244&single=true&output=csv";
+    const REFRESH_MS = 11000;
+    const gridEl = document.getElementById('grid');
+    const updatedEl = document.getElementById('updated');
+
+    const medalEmoji = (t)=> {
+      const s = (t||'').toLowerCase();
+      if (s.includes('зол') || s.includes('gold')) return '🥇';
+      if (s.includes('сер') || s.includes('silver')) return '🥈';
+      if (s.includes('брон')|| s.includes('bronze')) return '🥉';
+      return '';
+    };
+
+    async function fetchCSV(){
+      try{
+        const res = await fetch(CSV_URL + '&_=' + Date.now(), {cache:'no-store'});
+        if(!res.ok) throw new Error('HTTP '+res.status);
+        const text = await res.text();
+        const parsed = Papa.parse(text, { skipEmptyLines: "greedy" });
+        render(parsed.data);
+        updatedEl.textContent = 'Время: ' + new Date().toLocaleTimeString();
+      }catch(e){
+        console.error('Ошибка загрузки CSV:', e);
+      }
+    }
+
+    function render(rows){
+      if(!rows || rows.length===0){
+        gridEl.innerHTML='';
+        return;
+      }
+      const header = rows[0].map(h => (h||'').toString().trim().toLowerCase());
+      const hasHdr = header.some(h => h.includes('фио')||h.includes('name')||
+                                       h.includes('итого')||h.includes('score')||
+                                       h.includes('медал')||h.includes('medal')||
+                                       h.includes('класс')||h.includes('class') );
+      const body = rows.slice(hasHdr?1:0);
+
+      let idxName  = hasHdr ? header.findIndex(h=>h.includes('фио')||h.includes('name')) : 0;
+      let idxScore = hasHdr ? header.findIndex(h=>h.includes('итого')||h.includes('score')) : 1;
+      let idxMedal = hasHdr ? header.findIndex(h=>h.includes('медал')||h.includes('medal')) : 2;
+      let idxClass = hasHdr ? header.findIndex(h=>h.includes('класс')||h.includes('class')) : 3;
+
+      if(idxName<0)  idxName=0;
+      if(idxScore<0) idxScore=1;
+      if(idxMedal<0) idxMedal=2;
+      if(idxClass<0) idxClass=3;
+
+      const data = body.map(r=>{
+        const name  = (r[idxName]  ?? '').toString().trim();
+        const scoreRaw = parseFloat((r[idxScore] ?? '0').toString().replace(',','.')) || 0;
+        const medal = (r[idxMedal] ?? '').toString().trim();
+        const klass = (r[idxClass] ?? '').toString().trim();
+        return { name, scoreRaw, medal, klass, score: Math.round(scoreRaw) };
+      }).filter(r=>r.name);
+
+      // Сортировка ТОЛЬКО по баллам (по убыванию), затем по имени
+      data.sort((a,b)=>{
+        const byScore = b.scoreRaw - a.scoreRaw;
+        if (byScore) return byScore;
+        return a.name.localeCompare(b.name,'ru');
+      });
+
+      gridEl.innerHTML='';
+      data.forEach((row,i)=>{
+        const e = medalEmoji(row.medal);
+        const el = document.createElement('div');
+        el.className='tile';
+        el.innerHTML = `
+          <div class="left">
+            <div class="rank">${i+1}</div>
+            <div>
+              <div class="name">${e?e+' ':''}${row.name}</div>
+              ${row.klass ? `<div class="class">Класс: ${row.klass}</div>` : ""}
+            </div>
+          </div>
+          <div class="right">
+            ${e?`<div class="medal">${e}</div>`:''}
+            <div class="score">${row.score}</div>
+          </div>
+        `;
+        gridEl.appendChild(el);
+      });
+    }
+
+    fetchCSV();
+    setInterval(fetchCSV, REFRESH_MS);
+  </script>
+</body>
+</html>
+
+
+
+
+
+
